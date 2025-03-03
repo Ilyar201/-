@@ -1,40 +1,44 @@
 import asyncio
-from telethon import TelegramClient, events
-from telethon.tl.functions.channels import ApproveAllJoinRequests
-from telethon.errors import ChatAdminRequiredError
+from telethon import TelegramClient
+from telethon.tl.functions.channels import GetParticipant, ApproveAllJoinRequests
+from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
 
-# Заполни свои данные
-api_id = 123456  # замени на свое
-api_hash = 'your_api_hash'  # замени на свое
-bot_token = 'your_bot_token'  # замени на свое
+# Вставь свои данные
+api_id = 123456  # замени на свой api_id
+api_hash = 'your_api_hash'  # замени на свой api_hash
+bot_token = 'your_bot_token'  # токен бота, который будет одобрять заявки
 
-client = TelegramClient('auto_approver_session', api_id, api_hash).start(bot_token=bot_token)
+client = TelegramClient('auto_approver', api_id, api_hash).start(bot_token=bot_token)
 
-async def approve_all_requests():
-    dialogs = await client.get_dialogs()
-    for dialog in dialogs:
-        if not dialog.is_channel:
-            continue
-        try:
-            await client(ApproveAllJoinRequests(dialog.id))
-            print(f"Все заявки в {dialog.title} приняты")
-        except ChatAdminRequiredError:
-            print(f"Нет прав на принятие заявок в {dialog.title}")
-        except Exception as e:
-            print(f"Ошибка в {dialog.title}: {e}")
+async def approve_requests_in_channel(channel):
+    try:
+        # Проверяем, админ ли бот
+        participant = await client(GetParticipant(channel, 'me'))
+        if not isinstance(participant.participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
+            print(f'Нет прав на управление в {channel.title}')
+            return
 
-@client.on(events.NewMessage(pattern='/start'))
-async def handler(event):
-    await event.reply("✅ Бот активен и принимает заявки в каналы!")
+        # Одобряем все заявки
+        await client(ApproveAllJoinRequests(channel.id))
+        print(f'✅ Все заявки в канал {channel.title} приняты')
+
+    except Exception as e:
+        print(f'❌ Ошибка при обработке {channel.title}: {e}')
 
 async def main():
-    print("Бот запущен и следит за заявками...")
+    print("Бот запущен и принимает заявки...")
     while True:
         try:
-            await approve_all_requests()
+            dialogs = await client.get_dialogs()
+
+            for dialog in dialogs:
+                if dialog.is_channel:
+                    await approve_requests_in_channel(dialog)
+
         except Exception as e:
-            print(f"Ошибка при проверке заявок: {e}")
-        await asyncio.sleep(10)  # каждые 10 секунд проверка
+            print(f"❌ Общая ошибка: {e}")
+
+        await asyncio.sleep(10)  # Каждые 10 секунд проверка всех каналов
 
 with client:
     client.loop.run_until_complete(main())

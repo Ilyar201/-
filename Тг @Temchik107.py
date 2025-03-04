@@ -1,44 +1,44 @@
-import asyncio
-from telethon import TelegramClient
-from telethon.tl.functions.channels import GetParticipant, ApproveAllJoinRequests
-from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
+# meta developer: @Temchik107
+# meta banner: Auto Approve Requests for Termux Channel
 
-# Вставь свои данные
-api_id = 123456  # замени на свой api_id
-api_hash = 'your_api_hash'  # замени на свой api_hash
-bot_token = 'your_bot_token'  # токен бота, который будет одобрять заявки
+from telethon import events
+from telethon.tl.functions.channels import GetParticipant
+from telethon.tl.functions.channels import EditBanned
+from telethon.tl.functions.messages import GetPeerDialogs
+from telethon.tl.types import ChatAdminRights, ChannelParticipantCreator, ChannelParticipantAdmin, ChannelParticipantBanned
 
-client = TelegramClient('auto_approver', api_id, api_hash).start(bot_token=bot_token)
+from hikka import loader, utils  # Для совместимости с Hikka
 
-async def approve_requests_in_channel(channel):
-    try:
-        # Проверяем, админ ли бот
-        participant = await client(GetParticipant(channel, 'me'))
-        if not isinstance(participant.participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
-            print(f'Нет прав на управление в {channel.title}')
-            return
+class AutoApproveRequests(loader.Module):
+    """Автоматическое принятие заявок в канал Termux"""
 
-        # Одобряем все заявки
-        await client(ApproveAllJoinRequests(channel.id))
-        print(f'✅ Все заявки в канал {channel.title} приняты')
+    strings = {"name": "AutoApproveRequests"}
 
-    except Exception as e:
-        print(f'❌ Ошибка при обработке {channel.title}: {e}')
+    def __init__(self):
+        self.config = loader.ModuleConfig(
+            "CHANNEL_ID", -1001234567890, "ID вашего канала", validator=loader.validators.Integer()
+        )
 
-async def main():
-    print("Бот запущен и принимает заявки...")
-    while True:
+    async def client_ready(self, client, db):
+        self.client = client
+
+    @loader.loop(interval=10)  # Проверка заявок каждые 10 секунд
+    async def check_requests(self):
+        channel_id = self.config["CHANNEL_ID"]
+
         try:
-            dialogs = await client.get_dialogs()
-
-            for dialog in dialogs:
-                if dialog.is_channel:
-                    await approve_requests_in_channel(dialog)
-
+            # Получаем список заявок
+            requests = await self.client(GetPeerDialogs([channel_id]))
+            for request in requests.dialogs:
+                if request.peer.user_id:
+                    user_id = request.peer.user_id
+                    await self.approve_request(channel_id, user_id)
         except Exception as e:
-            print(f"❌ Общая ошибка: {e}")
+            print(f"Ошибка при получении заявок: {e}")
 
-        await asyncio.sleep(10)  # Каждые 10 секунд проверка всех каналов
-
-with client:
-    client.loop.run_until_complete(main())
+    async def approve_request(self, channel_id, user_id):
+        try:
+            await self.client(EditBanned(channel_id, user_id, ChannelParticipantBanned(False)))
+            print(f"Заявка пользователя {user_id} одобрена.")
+        except Exception as e:
+            print(f"Ошибка при одобрении {user_id}: {e}")

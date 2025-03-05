@@ -1,115 +1,101 @@
 # meta developer: @Temchik107
 # meta author: @xasterkarya
-# meta name: MineRPS+
+# meta name: RockPaperScissors
 # meta version: 1.0
-# meta description: Камень-Ножницы-Бумага с кнопками для Hikka NG
+# meta description: Игра Камень-Ножницы-Бумага для Hikka
 
-from .. import loader, utils
 from telethon.tl.custom import Button
+from .. import loader, utils
 
-class MineRPSPlusMod(loader.Module):
-    """Камень-Ножницы-Бумага с кнопками для Hikka NG"""
-    strings = {"name": "MineRPS+"}
+class RockPaperScissorsMod(loader.Module):
+    """Игра Камень-Ножницы-Бумага для Hikka"""
+    strings = {"name": "RPSGame"}
 
     def __init__(self):
         self.games = {}
 
     async def minerpscmd(self, message):
-        """Запуск игры с другом: .minerps @username"""
+        """Запустить игру с другом — .minerps @username"""
         args = utils.get_args_raw(message)
         if not args:
-            await message.reply("Укажи противника: .minerps @username")
+            await message.reply("Укажи соперника через @.")
             return
 
-        chat_id = message.chat_id
-        if chat_id in self.games:
-            await message.reply("В этом чате уже идет игра.")
+        if message.chat_id in self.games:
+            await message.reply("Игра уже идет в этом чате.")
             return
 
-        self.games[chat_id] = {
-            "player1": message.sender_id,
-            "player2": None,
-            "moves": {}
+        self.games[message.chat_id] = {
+            "players": [message.sender_id, None],
+            "moves": [None, None]
         }
-
-        buttons = [
-            [Button.inline("✂️ Ножницы", b"rps_move:scissors")],
-            [Button.inline("🪨 Камень", b"rps_move:rock")],
-            [Button.inline("📄 Бумага", b"rps_move:paper")]
-        ]
 
         await message.reply(
             f"Игра начата с {args}!\nВыбирайте свой ход, нажимая на кнопки ниже.",
-            buttons=buttons
+            buttons=self.get_buttons()
         )
 
-        self.games[chat_id]["player2_mention"] = args
+    def get_buttons(self):
+        return [
+            [Button.inline("✊ Камень", "rps:rock"),
+             Button.inline("✌️ Ножницы", "rps:scissors"),
+             Button.inline("✋ Бумага", "rps:paper")]
+        ]
 
     async def on_callback_query(self, call):
-        data = call.data.decode("utf-8").split(":")
-        if data[0] != "rps_move":
-            return
-
-        move = data[1]
-        chat_id = call.peer_id.chat_id if call.peer_id else call.chat_id
-
-        if chat_id not in self.games:
-            await call.answer("Игра уже завершена или не начата.")
-            return
-
-        game = self.games[chat_id]
+        chat_id = call.peer_id.chat_id
         user_id = call.from_user.id
 
-        if user_id not in [game["player1"], game["player2"]]:
-            if game["player2"] is None:
-                game["player2"] = user_id
-            else:
-                await call.answer("Ты не участвуешь в этой игре.")
-                return
-
-        if user_id in game["moves"]:
-            await call.answer("Ты уже сделал выбор.")
+        if chat_id not in self.games:
+            await call.answer("Игра не найдена.", alert=True)
             return
 
-        game["moves"][user_id] = move
-        await call.answer(f"Вы выбрали {self.emoji(move)}")
+        game = self.games[chat_id]
+        if user_id not in game["players"]:
+            if game["players"][1] is None:
+                game["players"][1] = user_id
+            else:
+                await call.answer("Ты не участник этой игры.", alert=True)
+                return
 
-        if len(game["moves"]) == 2:
+        player_index = game["players"].index(user_id)
+        if game["moves"][player_index] is not None:
+            await call.answer("Ты уже сделал свой выбор.", alert=True)
+            return
+
+        move = call.data.decode().split(":")[1]
+        game["moves"][player_index] = move
+
+        if all(game["moves"]):
             await self.finish_game(chat_id, call)
+        else:
+            await call.edit(f"Ждем второго игрока...", buttons=self.get_buttons())
 
     async def finish_game(self, chat_id, call):
-        game = self.games[chat_id]
-        p1, p2 = game["player1"], game["player2"]
-        m1, m2 = game["moves"][p1], game["moves"][p2]
+        game = self.games.pop(chat_id)
+        p1, p2 = game["players"]
+        m1, m2 = game["moves"]
 
-        result = (
-            f"⚔️ Результаты игры Камень-Ножницы-Бумага\n\n"
-            f"Игрок 1 выбрал: {self.emoji(m1)}\n"
-            f"Игрок 2 выбрал: {self.emoji(m2)}\n\n"
-        )
+        result = self.get_result(m1, m2)
+        text = f"Игра завершена!\n\nИгрок 1 ({p1}): {self.emoji(m1)}\nИгрок 2 ({p2}): {self.emoji(m2)}\n\n"
 
-        winner = self.determine_winner(m1, m2)
-        if winner == "draw":
-            result += "Ничья!"
-        elif winner == "p1":
-            result += "✨ Победил Игрок 1!"
+        if result == 0:
+            text += "Ничья!"
+        elif result == 1:
+            text += "Победил Игрок 1!"
         else:
-            result += "✨ Победил Игрок 2!"
+            text += "Победил Игрок 2!"
 
-        await call.edit(result, buttons=None)
-        del self.games[chat_id]
+        await call.edit(text)
 
-    def determine_winner(self, move1, move2):
-        rules = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
+    def get_result(self, move1, move2):
         if move1 == move2:
-            return "draw"
-        if rules[move1] == move2:
-            return "p1"
-        return "p2"
+            return 0
+        if (move1 == "rock" and move2 == "scissors") or \
+           (move1 == "scissors" and move2 == "paper") or \
+           (move1 == "paper" and move2 == "rock"):
+            return 1
+        return 2
 
     def emoji(self, move):
-        return {
-            "rock": "🪨 Камень",
-            "scissors": "✂️ Ножницы",
-            "paper": "📄 Бумага"
-        }[move]
+        return {"rock": "✊", "scissors": "✌️", "paper": "✋"}[move]

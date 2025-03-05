@@ -1,21 +1,21 @@
 # meta developer: @Temchik107
 # meta author: @xasterkarya
-# meta name: EmojiRPSInline
+# meta name: MineRPS+
 # meta version: 1.0
-# meta description: Игра Камень-Ножницы-Бумага с inline кнопками
+# meta description: Камень-Ножницы-Бумага с кнопками для Hikka NG
 
 from .. import loader, utils
 from telethon.tl.custom import Button
 
-class EmojiRPSInline(loader.Module):
-    """Камень-Ножницы-Бумага через inline-кнопки"""
-    strings = {"name": "EmojiRPSInline"}
+class MineRPSPlusMod(loader.Module):
+    """Камень-Ножницы-Бумага с кнопками для Hikka NG"""
+    strings = {"name": "MineRPS+"}
 
     def __init__(self):
         self.games = {}
 
     async def minerpscmd(self, message):
-        """Запустить игру с другом: .minerps @юзернейм"""
+        """Запуск игры с другом: .minerps @username"""
         args = utils.get_args_raw(message)
         if not args:
             await message.reply("Укажи противника: .minerps @username")
@@ -51,7 +51,7 @@ class EmojiRPSInline(loader.Module):
             return
 
         move = data[1]
-        chat_id = call.peer_id.user_id if call.peer_id else call.chat_id
+        chat_id = call.peer_id.chat_id if call.peer_id else call.chat_id
 
         if chat_id not in self.games:
             await call.answer("Игра уже завершена или не начата.")
@@ -62,7 +62,7 @@ class EmojiRPSInline(loader.Module):
 
         if user_id not in [game["player1"], game["player2"]]:
             if game["player2"] is None:
-                game["player2"] = user_id  # Второй игрок автоматически присоединяется
+                game["player2"] = user_id
             else:
                 await call.answer("Ты не участвуешь в этой игре.")
                 return
